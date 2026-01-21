@@ -1,0 +1,1077 @@
+{
+	"info": {
+		"_postman_id": "hospital-clinic-api",
+		"name": "Hospital Clinic API",
+		"description": "Complete API collection for Hospital Clinic Management System",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000/api",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. AUTH",
+			"item": [
+				{
+					"name": "Login - Admin",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if(jsonData.token) {",
+									"    pm.collectionVariables.set('token', jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@clinic.com\",\n    \"password\": \"admin123\",\n    \"role\": \"ADMIN\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Login - Staff",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if(jsonData.token) {",
+									"    pm.collectionVariables.set('token', jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"staff@clinic.com\",\n    \"password\": \"admin123\",\n    \"role\": \"STAFF\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Login - Doctor",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if(jsonData.token) {",
+									"    pm.collectionVariables.set('token', jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"doctor@clinic.com\",\n    \"password\": \"admin123\",\n    \"role\": \"DOCTOR\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "me"]
+						}
+					}
+				},
+				{
+					"name": "Change Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"currentPassword\": \"admin123\",\n    \"newPassword\": \"newpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/change-password",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "change-password"]
+						}
+					}
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/logout",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "logout"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. ADMIN",
+			"item": [
+				{
+					"name": "Dashboard Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/dashboard/stats",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "dashboard", "stats"]
+						}
+					}
+				},
+				{
+					"name": "Get All Doctors",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/doctors",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "doctors"]
+						}
+					}
+				},
+				{
+					"name": "Add Doctor",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Dr. Patel\",\n    \"email\": \"patel@clinic.com\",\n    \"mobile\": \"9876543212\",\n    \"specialization\": \"Cardiology\",\n    \"username\": \"drpatel\",\n    \"qualification\": \"MBBS, MD, DM\",\n    \"registration_no\": \"REG54321\",\n    \"password\": \"doctor123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/doctors",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "doctors"]
+						}
+					}
+				},
+				{
+					"name": "Update Doctor",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Dr. Patel Updated\",\n    \"specialization\": \"Cardiology\",\n    \"qualification\": \"MBBS, MD, DM Cardio\",\n    \"status\": \"Active\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/doctors/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "doctors", "1"]
+						}
+					}
+				},
+				{
+					"name": "Delete Doctor",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/doctors/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "doctors", "1"]
+						}
+					}
+				},
+				{
+					"name": "Get All Staff",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/staff",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "staff"]
+						}
+					}
+				},
+				{
+					"name": "Add Staff",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Receptionist Priya\",\n    \"email\": \"priya@clinic.com\",\n    \"mobile\": \"9876543213\",\n    \"username\": \"priya\",\n    \"password\": \"staff123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/staff",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "staff"]
+						}
+					}
+				},
+				{
+					"name": "Update Staff",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Receptionist Priya Updated\",\n    \"mobile\": \"9876543214\",\n    \"status\": \"Active\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/staff/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "staff", "1"]
+						}
+					}
+				},
+				{
+					"name": "Delete Staff",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/staff/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "staff", "1"]
+						}
+					}
+				},
+				{
+					"name": "Get All Patients",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/patients",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "patients"]
+						}
+					}
+				},
+				{
+					"name": "Get All Appointments",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/appointments",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "appointments"]
+						}
+					}
+				},
+				{
+					"name": "Get Clinic Settings",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/settings",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "settings"]
+						}
+					}
+				},
+				{
+					"name": "Update Clinic Settings",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"clinic_name\": \"City General Hospital\",\n    \"address\": \"456, Medical Complex, Healthcare City\",\n    \"phone\": \"+91 98765 12345\",\n    \"email\": \"info@citygeneralhospital.com\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/settings",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "settings"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "3. STAFF",
+			"item": [
+				{
+					"name": "Staff Dashboard",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/staff/dashboard",
+							"host": ["{{baseUrl}}"],
+							"path": ["staff", "dashboard"]
+						}
+					}
+				},
+				{
+					"name": "Get All Patients",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/staff/patients",
+							"host": ["{{baseUrl}}"],
+							"path": ["staff", "patients"]
+						}
+					}
+				},
+				{
+					"name": "Search Patient by Mobile",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/patients/search?mobile=9876543210",
+							"host": ["{{baseUrl}}"],
+							"path": ["patients", "search"],
+							"query": [
+								{
+									"key": "mobile",
+									"value": "9876543210"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Add New Patient",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Rahul Kumar\",\n    \"mobile\": \"9123456789\",\n    \"age\": 35,\n    \"gender\": \"Male\",\n    \"address\": \"123, Main Street, Delhi\",\n    \"blood_group\": \"O+\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/staff/patients",
+							"host": ["{{baseUrl}}"],
+							"path": ["staff", "patients"]
+						}
+					}
+				},
+				{
+					"name": "Get Staff Appointments",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/staff/appointments",
+							"host": ["{{baseUrl}}"],
+							"path": ["staff", "appointments"]
+						}
+					}
+				},
+				{
+					"name": "Get Available Doctors",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/appointments/doctors/available",
+							"host": ["{{baseUrl}}"],
+							"path": ["appointments", "doctors", "available"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. APPOINTMENTS",
+			"item": [
+				{
+					"name": "Create Appointment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"patient_id\": 1,\n    \"doctor_id\": 1,\n    \"appointment_date\": \"2025-01-21\",\n    \"appointment_time\": \"10:00:00\",\n    \"reason\": \"General checkup\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/appointments",
+							"host": ["{{baseUrl}}"],
+							"path": ["appointments"]
+						}
+					}
+				},
+				{
+					"name": "Get Appointment by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/appointments/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["appointments", "1"]
+						}
+					}
+				},
+				{
+					"name": "Update Appointment Status",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"Completed\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/appointments/1/status",
+							"host": ["{{baseUrl}}"],
+							"path": ["appointments", "1", "status"]
+						}
+					}
+				},
+				{
+					"name": "Cancel Appointment",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"Cancelled\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/appointments/1/status",
+							"host": ["{{baseUrl}}"],
+							"path": ["appointments", "1", "status"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "5. DOCTOR",
+			"item": [
+				{
+					"name": "Doctor Dashboard",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/doctor/dashboard",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "dashboard"]
+						}
+					}
+				},
+				{
+					"name": "Today's Appointments",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/doctor/appointments/today",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "appointments", "today"]
+						}
+					}
+				},
+				{
+					"name": "Get Consultation Data",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/doctor/consultation/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "consultation", "1"]
+						}
+					}
+				},
+				{
+					"name": "Save Consultation",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"chief_complaints\": \"Patient complains of fever and headache for 3 days\",\n    \"comorbidities\": \"Diabetes Type 2, Hypertension\",\n    \"imaging_findings\": \"Chest X-ray normal\",\n    \"diagnosis\": \"Viral fever with associated symptoms\",\n    \"treatment_plan\": \"1. Paracetamol 500mg TDS\\n2. Rest for 3 days\\n3. Plenty of fluids\",\n    \"follow_up_notes\": \"Review after 5 days if symptoms persist\",\n    \"vitals\": {\n        \"bp\": \"120/80\",\n        \"pulse\": \"78\",\n        \"temperature\": \"101.2\",\n        \"weight\": \"72\",\n        \"spo2\": \"98\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/doctor/consultation/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "consultation", "1"]
+						}
+					}
+				},
+				{
+					"name": "Upload Consultation Media",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": ""
+								},
+								{
+									"key": "file_type",
+									"value": "X-ray",
+									"type": "text"
+								},
+								{
+									"key": "description",
+									"value": "Chest X-ray report",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/doctor/consultation/1/media",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "consultation", "1", "media"]
+						}
+					}
+				},
+				{
+					"name": "Get Patient History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/doctor/patients/history?mobile=9876543210",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "patients", "history"],
+							"query": [
+								{
+									"key": "mobile",
+									"value": "9876543210"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Patient by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/doctor/patients/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "patients", "1"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "6. TEMPLATES",
+			"item": [
+				{
+					"name": "Get All Templates",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/doctor/templates",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "templates"]
+						}
+					}
+				},
+				{
+					"name": "Get Templates by Field Type",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/doctor/templates?field_type=diagnosis",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "templates"],
+							"query": [
+								{
+									"key": "field_type",
+									"value": "diagnosis"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Template",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"field_type\": \"diagnosis\",\n    \"name\": \"Viral Fever\",\n    \"content\": \"Viral fever with associated upper respiratory tract infection. Symptoms include fever, body ache, and mild cough.\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/doctor/templates",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "templates"]
+						}
+					}
+				},
+				{
+					"name": "Delete Template",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/doctor/templates/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "templates", "1"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "7. REPORTS & MEDIA",
+			"item": [
+				{
+					"name": "Get Patient Reports",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/doctor/reports?patient_id=1",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "reports"],
+							"query": [
+								{
+									"key": "patient_id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Upload Report",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": ""
+								},
+								{
+									"key": "patient_id",
+									"value": "1",
+									"type": "text"
+								},
+								{
+									"key": "file_type",
+									"value": "Blood",
+									"type": "text"
+								},
+								{
+									"key": "description",
+									"value": "Complete Blood Count Report",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/doctor/reports",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "reports"]
+						}
+					}
+				},
+				{
+					"name": "Delete Report",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/doctor/reports/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["doctor", "reports", "1"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "8. PATIENTS",
+			"item": [
+				{
+					"name": "Search Patient by Mobile",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/patients/search?mobile=9876",
+							"host": ["{{baseUrl}}"],
+							"path": ["patients", "search"],
+							"query": [
+								{
+									"key": "mobile",
+									"value": "9876"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Patient by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/patients/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["patients", "1"]
+						}
+					}
+				},
+				{
+					"name": "Update Patient",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Rahul Kumar Updated\",\n    \"age\": 36,\n    \"address\": \"456, New Address, Delhi\",\n    \"blood_group\": \"A+\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/patients/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["patients", "1"]
+						}
+					}
+				}
+			]
+		}
+	]
+}
