@@ -160,7 +160,14 @@ CREATE TABLE IF NOT EXISTS clinic_settings (
     email VARCHAR(255),
     logo_url VARCHAR(500),
     signature_url VARCHAR(500),
+    print_header TEXT,
     print_header_footer TEXT,
+    header_margin_top DECIMAL(5,2) DEFAULT 0,
+    header_margin_bottom DECIMAL(5,2) DEFAULT 0,
+    footer_margin_top DECIMAL(5,2) DEFAULT 0,
+    footer_margin_bottom DECIMAL(5,2) DEFAULT 0,
+    page_margin_left DECIMAL(5,2) DEFAULT 0,
+    page_margin_right DECIMAL(5,2) DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 

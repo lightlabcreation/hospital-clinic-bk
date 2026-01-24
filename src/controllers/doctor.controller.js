@@ -207,7 +207,7 @@ const getConsultationData = async (req, res) => {
             WHERE c.patient_id = ? AND c.id != (
                 SELECT id FROM consultations WHERE appointment_id = ? LIMIT 1
             )
-            ORDER BY c.created_at DESC
+            ORDER BY a.appointment_date DESC, a.appointment_time DESC, c.id DESC
             LIMIT 10
         `, [appointment.patient_id, appointmentId]);
 
@@ -216,6 +216,16 @@ const getConsultationData = async (req, res) => {
             'SELECT * FROM consultations WHERE appointment_id = ?',
             [appointmentId]
         );
+
+        // Get media files for existing consultation
+        let mediaFiles = [];
+        if (existingConsultation.length > 0 && existingConsultation[0].id) {
+            const [media] = await db.query(
+                'SELECT * FROM consultation_media WHERE consultation_id = ? ORDER BY id DESC',
+                [existingConsultation[0].id]
+            );
+            mediaFiles = media;
+        }
 
         successResponse(res, {
             patient: {
@@ -245,7 +255,8 @@ const getConsultationData = async (req, res) => {
                     treatmentPlan: h.treatment_plan
                 }
             })),
-            existingConsultation: existingConsultation[0] || null
+            existingConsultation: existingConsultation[0] || null,
+            mediaFiles: mediaFiles
         }, 'Consultation data fetched successfully');
 
     } catch (error) {
@@ -390,6 +401,26 @@ const saveConsultation = async (req, res) => {
 };
 
 // ====================================
+// CONSULTATION - GET MEDIA FILES
+// ====================================
+const getConsultationMedia = async (req, res) => {
+    try {
+        const { consultationId } = req.params;
+
+        const [mediaFiles] = await db.query(
+            'SELECT * FROM consultation_media WHERE consultation_id = ? ORDER BY uploaded_at DESC, id DESC',
+            [consultationId]
+        );
+
+        successResponse(res, mediaFiles, 'Media files fetched successfully');
+
+    } catch (error) {
+        console.error('Get Consultation Media Error:', error);
+        errorResponse(res, 'Failed to fetch media files', 500, error.message);
+    }
+};
+
+// ====================================
 // CONSULTATION - UPLOAD MEDIA
 // ====================================
 const uploadConsultationMedia = async (req, res) => {
@@ -411,7 +442,10 @@ const uploadConsultationMedia = async (req, res) => {
             return errorResponse(res, 'Consultation not found', 404);
         }
 
-        const fileUrl = `/uploads/${req.file.filename}`;
+        // Determine correct file path based on file type (matches upload middleware)
+        const folder = req.file.mimetype.startsWith('image/') ? 'images' : 
+                      req.file.mimetype === 'application/pdf' ? 'documents' : 'others';
+        const fileUrl = `/uploads/${folder}/${req.file.filename}`;
         const fileType = req.file.mimetype.includes('pdf') ? 'PDF' : 'IMAGE';
 
         const [result] = await db.query(`
@@ -420,9 +454,23 @@ const uploadConsultationMedia = async (req, res) => {
             VALUES (?, ?, ?, ?, ?, ?)
         `, [consultationId, consultation[0].patient_id, req.file.originalname, fileType, fileUrl, req.user.id]);
 
+        // Get the inserted record
+        const [insertedFile] = await db.query(
+            'SELECT * FROM consultation_media WHERE id = ?',
+            [result.insertId]
+        );
+
         successResponse(res, {
+            id: result.insertId,
             fileId: result.insertId,
-            fileUrl
+            file_url: fileUrl,
+            fileUrl: fileUrl,
+            file_name: req.file.originalname,
+            fileName: req.file.originalname,
+            file_type: fileType,
+            fileType: fileType,
+            consultation_id: consultationId,
+            ...insertedFile[0]
         }, 'File uploaded successfully');
 
     } catch (error) {
@@ -451,9 +499,9 @@ const getPatientHistory = async (req, res) => {
         // Get patients - for ADMIN show all, for DOCTOR show only their patients
         let query = `
             SELECT DISTINCT p.*,
-                   (SELECT diagnosis FROM consultations WHERE patient_id = p.id ORDER BY created_at DESC LIMIT 1) as lastCondition,
+                   (SELECT diagnosis FROM consultations WHERE patient_id = p.id ORDER BY id DESC LIMIT 1) as lastCondition,
                    (SELECT COUNT(*) FROM consultations WHERE patient_id = p.id${doctorId ? ' AND doctor_id = ?' : ''}) as totalVisits,
-                   (SELECT MAX(created_at) FROM consultations WHERE patient_id = p.id) as lastVisitDate
+                   (SELECT MAX(id) FROM consultations WHERE patient_id = p.id) as lastVisitDate
             FROM patients p
         `;
         const params = [];
@@ -463,9 +511,9 @@ const getPatientHistory = async (req, res) => {
             // We'll need to handle this in the subquery separately
             query = `
                 SELECT DISTINCT p.*,
-                       (SELECT diagnosis FROM consultations WHERE patient_id = p.id ORDER BY created_at DESC LIMIT 1) as lastCondition,
+                       (SELECT diagnosis FROM consultations WHERE patient_id = p.id ORDER BY id DESC LIMIT 1) as lastCondition,
                        (SELECT COUNT(*) FROM consultations WHERE patient_id = p.id AND doctor_id = ?) as totalVisits,
-                       (SELECT MAX(created_at) FROM consultations WHERE patient_id = p.id) as lastVisitDate
+                       (SELECT MAX(id) FROM consultations WHERE patient_id = p.id) as lastVisitDate
                 FROM patients p
             `;
             params.push(doctorId);
@@ -551,7 +599,7 @@ const getPatientFullHistory = async (req, res) => {
             JOIN appointments a ON c.appointment_id = a.id
             JOIN doctors d ON c.doctor_id = d.id
             WHERE c.patient_id = ?
-            ORDER BY c.created_at DESC
+            ORDER BY a.appointment_date DESC, a.appointment_time DESC, c.id DESC
         `, [patientId]);
 
         successResponse(res, {
@@ -646,6 +694,81 @@ const uploadReport = async (req, res) => {
     }
 };
 
+const downloadReport = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const fs = require('fs');
+        const path = require('path');
+
+        // Get report from database
+        const [reports] = await db.query('SELECT * FROM consultation_media WHERE id = ?', [id]);
+
+        if (reports.length === 0) {
+            return errorResponse(res, 'Report not found', 404);
+        }
+
+        const report = reports[0];
+
+        // Check if user has access (for DOCTOR role, verify they have access to this patient)
+        if (req.user.role === 'DOCTOR') {
+            const doctorId = await getDoctorId(req.user.id);
+            if (doctorId) {
+                const [accessCheck] = await db.query(`
+                    SELECT 1 FROM appointments a 
+                    JOIN consultations c ON a.id = c.appointment_id 
+                    WHERE a.patient_id = ? AND c.doctor_id = ?
+                `, [report.patient_id, doctorId]);
+                
+                if (accessCheck.length === 0) {
+                    return errorResponse(res, 'Access denied', 403);
+                }
+            }
+        }
+
+        // Construct file path - handle both /uploads/... and direct paths
+        let fileRelativePath = report.file_url;
+        if (fileRelativePath.startsWith('/uploads/')) {
+            fileRelativePath = fileRelativePath.replace('/uploads/', '');
+        }
+        const filePath = path.join(__dirname, '../../uploads', fileRelativePath);
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            console.error('File not found at path:', filePath);
+            console.error('Original file_url:', report.file_url);
+            return errorResponse(res, 'File not found on server', 404);
+        }
+
+        // Set headers for download with proper content type
+        const fileName = report.file_name || 'report';
+        const fileExt = path.extname(fileName).toLowerCase();
+        
+        // Determine content type based on file extension
+        let contentType = 'application/octet-stream';
+        if (fileExt === '.pdf') {
+            contentType = 'application/pdf';
+        } else if (['.jpg', '.jpeg'].includes(fileExt)) {
+            contentType = 'image/jpeg';
+        } else if (fileExt === '.png') {
+            contentType = 'image/png';
+        } else if (fileExt === '.gif') {
+            contentType = 'image/gif';
+        } else if (fileExt === '.webp') {
+            contentType = 'image/webp';
+        }
+        
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+        res.setHeader('Content-Type', contentType);
+
+        // Send file
+        res.sendFile(path.resolve(filePath));
+
+    } catch (error) {
+        console.error('Download Report Error:', error);
+        errorResponse(res, 'Failed to download report', 500, error.message);
+    }
+};
+
 const deleteReport = async (req, res) => {
     try {
         const { id } = req.params;
@@ -676,7 +799,7 @@ const getTemplates = async (req, res) => {
             params.push(fieldType);
         }
 
-        query += ' ORDER BY created_at DESC';
+        query += ' ORDER BY id DESC';
 
         const [templates] = await db.query(query, params);
 
@@ -763,7 +886,7 @@ const getRecentConsultations = async (req, res) => {
             params.push(doctorId);
         }
 
-        query += ` ORDER BY c.created_at DESC LIMIT ?`;
+        query += ` ORDER BY a.appointment_date DESC, a.appointment_time DESC, c.id DESC LIMIT ?`;
         params.push(parseInt(limit));
 
         const [consultations] = await db.query(query, params);
@@ -813,7 +936,17 @@ const getPrintData = async (req, res) => {
         }
 
         // Get clinic settings
-        const [settings] = await db.query('SELECT * FROM clinic_settings LIMIT 1');
+        const [settings] = await db.query(`
+            SELECT clinic_name, address, phone, email, logo_url, signature_url, 
+                   print_header, print_header_footer,
+                   header_margin_top, header_margin_bottom,
+                   footer_margin_top, footer_margin_bottom,
+                   page_margin_left, page_margin_right,
+                   header_padding_top, header_padding_bottom,
+                   footer_padding_top, footer_padding_bottom,
+                   content_spacing, section_spacing
+            FROM clinic_settings LIMIT 1
+        `);
 
         const consultation = consultations[0];
 
@@ -848,21 +981,153 @@ const getPrintData = async (req, res) => {
     }
 };
 
+// ====================================
+// UPDATE PRINT PREFERENCES
+// ====================================
+const updatePrintPreferences = async (req, res) => {
+    try {
+        const { 
+            header_margin_top,
+            header_margin_bottom,
+            footer_margin_top,
+            footer_margin_bottom,
+            page_margin_left,
+            page_margin_right,
+            header_padding_top,
+            header_padding_bottom,
+            footer_padding_top,
+            footer_padding_bottom,
+            content_spacing,
+            section_spacing
+        } = req.body;
+
+        // Build dynamic update query - only print preferences
+        const updateFields = []
+        const updateValues = []
+
+        // Print layout preferences only
+        if (header_margin_top !== undefined) {
+            updateFields.push('header_margin_top = ?')
+            updateValues.push(header_margin_top)
+        }
+        if (header_margin_bottom !== undefined) {
+            updateFields.push('header_margin_bottom = ?')
+            updateValues.push(header_margin_bottom)
+        }
+        if (footer_margin_top !== undefined) {
+            updateFields.push('footer_margin_top = ?')
+            updateValues.push(footer_margin_top)
+        }
+        if (footer_margin_bottom !== undefined) {
+            updateFields.push('footer_margin_bottom = ?')
+            updateValues.push(footer_margin_bottom)
+        }
+        if (page_margin_left !== undefined) {
+            updateFields.push('page_margin_left = ?')
+            updateValues.push(page_margin_left)
+        }
+        if (page_margin_right !== undefined) {
+            updateFields.push('page_margin_right = ?')
+            updateValues.push(page_margin_right)
+        }
+        if (header_padding_top !== undefined) {
+            updateFields.push('header_padding_top = ?')
+            updateValues.push(header_padding_top)
+        }
+        if (header_padding_bottom !== undefined) {
+            updateFields.push('header_padding_bottom = ?')
+            updateValues.push(header_padding_bottom)
+        }
+        if (footer_padding_top !== undefined) {
+            updateFields.push('footer_padding_top = ?')
+            updateValues.push(footer_padding_top)
+        }
+        if (footer_padding_bottom !== undefined) {
+            updateFields.push('footer_padding_bottom = ?')
+            updateValues.push(footer_padding_bottom)
+        }
+        if (content_spacing !== undefined) {
+            updateFields.push('content_spacing = ?')
+            updateValues.push(content_spacing)
+        }
+        if (section_spacing !== undefined) {
+            updateFields.push('section_spacing = ?')
+            updateValues.push(section_spacing)
+        }
+
+        if (updateFields.length === 0) {
+            return errorResponse(res, 'No print preferences to update', 400);
+        }
+
+        updateValues.push(1) // WHERE id = 1
+
+        await db.query(
+            `UPDATE clinic_settings SET ${updateFields.join(', ')} WHERE id = ?`,
+            updateValues
+        );
+
+        const [settings] = await db.query('SELECT * FROM clinic_settings LIMIT 1');
+
+        successResponse(res, settings[0], 'Print preferences updated successfully');
+
+    } catch (error) {
+        console.error('Update Print Preferences Error:', error);
+        errorResponse(res, 'Failed to update print preferences', 500, error.message);
+    }
+};
+
+// ====================================
+// SPEECH TRANSCRIPTION (Optional - for backend processing)
+// ====================================
+const transcribeSpeech = async (req, res) => {
+    try {
+        // This endpoint can be used for backend speech transcription
+        // For now, it accepts text from frontend Web Speech API
+        // Can be extended to use services like Google Cloud Speech-to-Text, AWS Transcribe, etc.
+        
+        const { text, language = 'en-US' } = req.body;
+        
+        if (!text) {
+            return errorResponse(res, 'Text is required', 400);
+        }
+        
+        // For now, just return the text (frontend Web Speech API handles transcription)
+        // In production, you could:
+        // 1. Accept audio file/stream
+        // 2. Send to Google Cloud Speech-to-Text, AWS Transcribe, or Azure Speech Services
+        // 3. Return transcribed text
+        
+        successResponse(res, {
+            transcribedText: text,
+            language: language,
+            confidence: 1.0
+        }, 'Speech transcribed successfully');
+        
+    } catch (error) {
+        console.error('Speech Transcription Error:', error);
+        errorResponse(res, 'Failed to transcribe speech', 500, error.message);
+    }
+};
+
 module.exports = {
     getDashboardStats,
     getTodayAppointments,
     getAppointments,
     getConsultationData,
     saveConsultation,
+    getConsultationMedia,
     uploadConsultationMedia,
     getPatientHistory,
     getPatientFullHistory,
     getReports,
     uploadReport,
+    downloadReport,
     deleteReport,
     getTemplates,
     addTemplate,
     deleteTemplate,
     getRecentConsultations,
-    getPrintData
+    getPrintData,
+    updatePrintPreferences,
+    transcribeSpeech
 };

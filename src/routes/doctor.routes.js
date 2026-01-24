@@ -22,6 +22,7 @@ router.get('/appointments', doctorController.getAppointments);
 // Consultation
 router.get('/consultation/:appointmentId', doctorController.getConsultationData);
 router.post('/consultation/:appointmentId', doctorController.saveConsultation);
+router.get('/consultation/:consultationId/media', doctorController.getConsultationMedia);
 router.post('/consultation/:consultationId/media', uploadSingle('file'), handleUploadError, doctorController.uploadConsultationMedia);
 router.get('/consultation/:consultationId/print', doctorController.getPrintData);
 
@@ -35,11 +36,18 @@ router.get('/consultations/recent', doctorController.getRecentConsultations);
 // Reports & Images
 router.get('/reports', doctorController.getReports);
 router.post('/reports', uploadSingle('file'), handleUploadError, doctorController.uploadReport);
+router.get('/reports/:id/download', doctorController.downloadReport);
 router.delete('/reports/:id', doctorController.deleteReport);
 
 // Templates
 router.get('/templates', doctorController.getTemplates);
 router.post('/templates', doctorController.addTemplate);
 router.delete('/templates/:id', doctorController.deleteTemplate);
+
+// Print Preferences (Doctors can update print layout settings)
+router.put('/print-preferences', doctorController.updatePrintPreferences);
+
+// Speech Transcription (Optional - for backend processing)
+router.post('/speech/transcribe', doctorController.transcribeSpeech);
 
 module.exports = router;

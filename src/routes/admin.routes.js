@@ -21,6 +21,7 @@ router.post('/doctors', adminController.addDoctor);
 router.put('/doctors/:id', adminController.updateDoctor);
 router.delete('/doctors/:id', adminController.deleteDoctor);
 router.patch('/doctors/:id/status', adminController.toggleDoctorStatus);
+router.get('/doctors/:doctorId/patients', adminController.getDoctorPatients);
 
 // Staff Management
 router.get('/staff', adminController.getAllStaff);
@@ -28,6 +29,7 @@ router.post('/staff', adminController.addStaff);
 router.put('/staff/:id', adminController.updateStaff);
 router.delete('/staff/:id', adminController.deleteStaff);
 router.patch('/staff/:id/status', adminController.toggleStaffStatus);
+router.get('/staff/:staffId/patients', adminController.getStaffPatients);
 
 // Clinic Settings
 router.get('/settings', adminController.getClinicSettings);

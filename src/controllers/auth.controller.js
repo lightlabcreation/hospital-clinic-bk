@@ -142,6 +142,36 @@ const logout = async (req, res) => {
 };
 
 // ====================================
+// UPDATE PROFILE
+// ====================================
+const updateProfile = async (req, res) => {
+    try {
+        const { name } = req.body;
+        const userId = req.user.id;
+
+        if (!name || name.trim() === '') {
+            return errorResponse(res, 'Name is required', 400);
+        }
+
+        // Update user name
+        await db.query('UPDATE users SET name = ? WHERE id = ?', [name.trim(), userId]);
+
+        // Get updated user
+        const [users] = await db.query('SELECT id, email, name, role FROM users WHERE id = ?', [userId]);
+
+        if (users.length === 0) {
+            return errorResponse(res, 'User not found', 404);
+        }
+
+        successResponse(res, users[0], 'Profile updated successfully');
+
+    } catch (error) {
+        console.error('Update Profile Error:', error);
+        errorResponse(res, 'Failed to update profile', 500, error.message);
+    }
+};
+
+// ====================================
 // CHANGE PASSWORD
 // ====================================
 const changePassword = async (req, res) => {
@@ -151,6 +181,10 @@ const changePassword = async (req, res) => {
 
         if (!currentPassword || !newPassword) {
             return errorResponse(res, 'Current password and new password are required', 400);
+        }
+
+        if (newPassword.length < 6) {
+            return errorResponse(res, 'New password must be at least 6 characters long', 400);
         }
 
         // Get current user
@@ -185,5 +219,6 @@ module.exports = {
     login,
     getMe,
     logout,
+    updateProfile,
     changePassword
 };
