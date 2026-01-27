@@ -23,42 +23,49 @@ const getDashboardStats = async (req, res) => {
 
         const today = new Date().toISOString().split('T')[0];
 
-        // Get today's total appointments
+        // Get today's total appointments for THIS doctor
         const [totalAppointments] = await db.query(
             'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ? AND appointment_date = ?',
             [doctorId, today]
         );
 
-        // Get pending (waiting) count
+        // Get pending (waiting) count for THIS doctor
         const [pendingCount] = await db.query(
             'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ? AND appointment_date = ? AND status = "Waiting"',
             [doctorId, today]
         );
 
-        // Get completed count
+        // Get completed count for THIS doctor
         const [completedCount] = await db.query(
             'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ? AND appointment_date = ? AND status = "Completed"',
             [doctorId, today]
         );
 
-        // Get next appointments (waiting only)
+        // Optional: Global clinic stats for context
+        const [globalToday] = await db.query(
+            'SELECT COUNT(*) as total FROM appointments WHERE appointment_date = ?',
+            [today]
+        );
+
+        // Get next appointments (All for today, not just waiting, to avoid appearing empty if already completed)
         const [nextAppointments] = await db.query(`
             SELECT a.id, a.appointment_time as time, a.reason, a.status,
                    p.id as patient_id, p.name as patient, p.age, p.gender
             FROM appointments a
             JOIN patients p ON a.patient_id = p.id
-            WHERE a.doctor_id = ? AND a.appointment_date = ? AND a.status = 'Waiting'
-            ORDER BY a.appointment_time ASC
-            LIMIT 5
+            WHERE a.doctor_id = ? AND a.appointment_date = ?
+            ORDER BY a.status DESC, a.appointment_time ASC
+            LIMIT 8
         `, [doctorId, today]);
 
         successResponse(res, {
             stats: {
-                todayTotal: totalAppointments[0].total,
-                pending: pendingCount[0].total,
-                completed: completedCount[0].total
+                todayTotal: totalAppointments[0]?.total || 0,
+                pending: pendingCount[0]?.total || 0,
+                completed: completedCount[0]?.total || 0,
+                globalToday: globalToday[0]?.total || 0
             },
-            nextAppointments
+            nextAppointments: nextAppointments || []
         }, 'Dashboard data fetched successfully');
 
     } catch (error) {
@@ -162,7 +169,7 @@ const getAppointments = async (req, res) => {
 const getConsultationData = async (req, res) => {
     try {
         const { appointmentId } = req.params;
-        
+
         // For ADMIN and STAFF, allow access to any appointment. For DOCTOR, check doctor profile
         let doctorId = null;
         if (req.user.role !== 'ADMIN' && req.user.role !== 'STAFF') {
@@ -182,13 +189,13 @@ const getConsultationData = async (req, res) => {
             WHERE a.id = ?
         `;
         const params = [appointmentId];
-        
+
         // Only filter by doctor_id if not ADMIN
         if (doctorId) {
             query += ` AND a.doctor_id = ?`;
             params.push(doctorId);
         }
-        
+
         const [appointments] = await db.query(query, params);
 
         if (appointments.length === 0) {
@@ -271,7 +278,7 @@ const getConsultationData = async (req, res) => {
 const saveConsultation = async (req, res) => {
     try {
         const { appointmentId } = req.params;
-        
+
         // For ADMIN and STAFF, allow access to any appointment. For DOCTOR, check doctor profile
         let doctorId = null;
         if (req.user.role !== 'ADMIN' && req.user.role !== 'STAFF') {
@@ -294,12 +301,12 @@ const saveConsultation = async (req, res) => {
         // Get appointment details - for ADMIN and STAFF, get appointment without doctor_id check
         let query = 'SELECT patient_id, doctor_id FROM appointments WHERE id = ?';
         const params = [appointmentId];
-        
+
         if (doctorId) {
             query += ' AND doctor_id = ?';
             params.push(doctorId);
         }
-        
+
         const [appointments] = await db.query(query, params);
 
         if (appointments.length === 0) {
@@ -443,8 +450,8 @@ const uploadConsultationMedia = async (req, res) => {
         }
 
         // Determine correct file path based on file type (matches upload middleware)
-        const folder = req.file.mimetype.startsWith('image/') ? 'images' : 
-                      req.file.mimetype === 'application/pdf' ? 'documents' : 'others';
+        const folder = req.file.mimetype.startsWith('image/') ? 'images' :
+            req.file.mimetype === 'application/pdf' ? 'documents' : 'others';
         const fileUrl = `/uploads/${folder}/${req.file.filename}`;
         const fileType = req.file.mimetype.includes('pdf') ? 'PDF' : 'IMAGE';
 
@@ -505,7 +512,7 @@ const getPatientHistory = async (req, res) => {
             FROM patients p
         `;
         const params = [];
-        
+
         // For totalVisits subquery, add doctorId param if needed
         if (doctorId) {
             // We'll need to handle this in the subquery separately
@@ -518,7 +525,7 @@ const getPatientHistory = async (req, res) => {
             `;
             params.push(doctorId);
         }
-        
+
         // Join consultations only if not ADMIN or if searching by doctor
         if (doctorId) {
             query += ` JOIN consultations c ON p.id = c.patient_id WHERE c.doctor_id = ?`;
@@ -526,7 +533,7 @@ const getPatientHistory = async (req, res) => {
         } else {
             query += ` LEFT JOIN consultations c ON p.id = c.patient_id WHERE 1=1`;
         }
-        
+
         // Add mobile filter if provided
         if (mobile) {
             query += ` AND p.mobile = ?`;
@@ -553,14 +560,14 @@ const getPatientHistory = async (req, res) => {
                     WHERE a.patient_id = ?
                 `;
                 const appointmentParams = [patient.id];
-                
+
                 if (doctorId) {
                     appointmentQuery += ` AND a.doctor_id = ?`;
                     appointmentParams.push(doctorId);
                 }
-                
+
                 appointmentQuery += ` ORDER BY a.appointment_date DESC, a.appointment_time DESC LIMIT 1`;
-                
+
                 const [appointments] = await db.query(appointmentQuery, appointmentParams);
                 return {
                     ...patient,
@@ -718,7 +725,7 @@ const downloadReport = async (req, res) => {
                     JOIN consultations c ON a.id = c.appointment_id 
                     WHERE a.patient_id = ? AND c.doctor_id = ?
                 `, [report.patient_id, doctorId]);
-                
+
                 if (accessCheck.length === 0) {
                     return errorResponse(res, 'Access denied', 403);
                 }
@@ -742,7 +749,7 @@ const downloadReport = async (req, res) => {
         // Set headers for download with proper content type
         const fileName = report.file_name || 'report';
         const fileExt = path.extname(fileName).toLowerCase();
-        
+
         // Determine content type based on file extension
         let contentType = 'application/octet-stream';
         if (fileExt === '.pdf') {
@@ -756,7 +763,7 @@ const downloadReport = async (req, res) => {
         } else if (fileExt === '.webp') {
             contentType = 'image/webp';
         }
-        
+
         res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
         res.setHeader('Content-Type', contentType);
 
@@ -780,6 +787,35 @@ const deleteReport = async (req, res) => {
     } catch (error) {
         console.error('Delete Report Error:', error);
         errorResponse(res, 'Failed to delete report', 500, error.message);
+    }
+};
+
+// ====================================
+// CONSULTATION - DELETE MEDIA
+// ====================================
+const deleteConsultationMedia = async (req, res) => {
+    try {
+        const { consultationId, mediaId } = req.params;
+        const doctorId = await getDoctorId(req.user.id);
+
+        // Verify consultation belongs to doctor
+        const [consultation] = await db.query(
+            'SELECT * FROM consultations WHERE id = ? AND doctor_id = ?',
+            [consultationId, doctorId]
+        );
+
+        if (consultation.length === 0) {
+            return errorResponse(res, 'Consultation not found or access denied', 404);
+        }
+
+        // Delete media file
+        await db.query('DELETE FROM consultation_media WHERE id = ? AND consultation_id = ?', [mediaId, consultationId]);
+
+        successResponse(res, null, 'Media file deleted successfully');
+
+    } catch (error) {
+        console.error('Delete Consultation Media Error:', error);
+        errorResponse(res, 'Failed to delete media file', 500, error.message);
     }
 };
 
@@ -950,6 +986,14 @@ const getPrintData = async (req, res) => {
 
         const consultation = consultations[0];
 
+        // Get media files for this consultation
+        const [mediaFiles] = await db.query(`
+            SELECT id, file_name, file_type, file_url, uploaded_at
+            FROM consultation_media
+            WHERE consultation_id = ?
+            ORDER BY uploaded_at DESC
+        `, [consultationId]);
+
         successResponse(res, {
             clinic: settings[0] || { clinic_name: 'My Clinic' },
             doctor: {
@@ -972,7 +1016,8 @@ const getPrintData = async (req, res) => {
                 diagnosis: consultation.diagnosis,
                 treatmentPlan: consultation.treatment_plan,
                 followUpNotes: consultation.follow_up_notes
-            }
+            },
+            mediaFiles: mediaFiles || []
         }, 'Print data fetched successfully');
 
     } catch (error) {
@@ -986,7 +1031,7 @@ const getPrintData = async (req, res) => {
 // ====================================
 const updatePrintPreferences = async (req, res) => {
     try {
-        const { 
+        const {
             header_margin_top,
             header_margin_bottom,
             footer_margin_top,
@@ -1084,25 +1129,25 @@ const transcribeSpeech = async (req, res) => {
         // This endpoint can be used for backend speech transcription
         // For now, it accepts text from frontend Web Speech API
         // Can be extended to use services like Google Cloud Speech-to-Text, AWS Transcribe, etc.
-        
+
         const { text, language = 'en-US' } = req.body;
-        
+
         if (!text) {
             return errorResponse(res, 'Text is required', 400);
         }
-        
+
         // For now, just return the text (frontend Web Speech API handles transcription)
         // In production, you could:
         // 1. Accept audio file/stream
         // 2. Send to Google Cloud Speech-to-Text, AWS Transcribe, or Azure Speech Services
         // 3. Return transcribed text
-        
+
         successResponse(res, {
             transcribedText: text,
             language: language,
             confidence: 1.0
         }, 'Speech transcribed successfully');
-        
+
     } catch (error) {
         console.error('Speech Transcription Error:', error);
         errorResponse(res, 'Failed to transcribe speech', 500, error.message);
@@ -1117,6 +1162,7 @@ module.exports = {
     saveConsultation,
     getConsultationMedia,
     uploadConsultationMedia,
+    deleteConsultationMedia,
     getPatientHistory,
     getPatientFullHistory,
     getReports,
