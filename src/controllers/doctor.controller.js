@@ -736,14 +736,18 @@ const downloadReport = async (req, res) => {
         let fileRelativePath = report.file_url;
         if (fileRelativePath.startsWith('/uploads/')) {
             fileRelativePath = fileRelativePath.replace('/uploads/', '');
+        } else if (fileRelativePath.startsWith('uploads/')) {
+            fileRelativePath = fileRelativePath.replace('uploads/', '');
         }
-        const filePath = path.join(__dirname, '../../uploads', fileRelativePath);
+
+        // Use process.cwd() for absolute path to project root
+        const filePath = path.join(process.cwd(), 'uploads', fileRelativePath);
 
         // Check if file exists
         if (!fs.existsSync(filePath)) {
             console.error('File not found at path:', filePath);
-            console.error('Original file_url:', report.file_url);
-            return errorResponse(res, 'File not found on server', 404);
+            console.error('Current Working Directory:', process.cwd());
+            return errorResponse(res, 'File not found on server. This can happen if the server was restarted and files were not persisted.', 404);
         }
 
         // Set headers for download with proper content type
@@ -793,6 +797,77 @@ const deleteReport = async (req, res) => {
 // ====================================
 // CONSULTATION - DELETE MEDIA
 // ====================================
+// ====================================
+// CONSULTATION - GET MEDIA FILE (AUTHENTICATED)
+// ====================================
+const getConsultationMediaFile = async (req, res) => {
+    try {
+        const { consultationId, mediaId } = req.params;
+        const fs = require('fs');
+        const path = require('path');
+
+        // Get media file from database
+        const [mediaFiles] = await db.query(
+            'SELECT * FROM consultation_media WHERE id = ? AND consultation_id = ?',
+            [mediaId, consultationId]
+        );
+
+        if (mediaFiles.length === 0) {
+            return errorResponse(res, 'Media file not found', 404);
+        }
+
+        const mediaFile = mediaFiles[0];
+
+        // Verify user has access to this consultation
+        const doctorId = await getDoctorId(req.user.id);
+        const [consultation] = await db.query(
+            'SELECT * FROM consultations WHERE id = ?',
+            [consultationId]
+        );
+
+        if (consultation.length === 0) {
+            return errorResponse(res, 'Consultation not found', 404);
+        }
+
+        // For DOCTOR role, verify they have access to this consultation
+        if (req.user.role === 'DOCTOR' && doctorId) {
+            if (consultation[0].doctor_id !== doctorId) {
+                return errorResponse(res, 'Access denied', 403);
+            }
+        }
+
+        // Construct file path
+        let fileRelativePath = mediaFile.file_url;
+        if (fileRelativePath.startsWith('/uploads/')) {
+            fileRelativePath = fileRelativePath.replace('/uploads/', '');
+        } else if (fileRelativePath.startsWith('uploads/')) {
+            fileRelativePath = fileRelativePath.replace('uploads/', '');
+        }
+
+        const filePath = path.join(process.cwd(), 'uploads', fileRelativePath);
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            console.error('File not found at path:', filePath);
+            return errorResponse(res, 'File not found on server', 404);
+        }
+
+        // Determine content type
+        const contentType = mediaFile.file_type === 'PDF' 
+            ? 'application/pdf' 
+            : 'image/jpeg'; // Default to jpeg for images
+
+        // Set headers and send file
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `inline; filename="${mediaFile.file_name}"`);
+        res.sendFile(filePath);
+
+    } catch (error) {
+        console.error('Get Consultation Media File Error:', error);
+        errorResponse(res, 'Failed to fetch media file', 500, error.message);
+    }
+};
+
 const deleteConsultationMedia = async (req, res) => {
     try {
         const { consultationId, mediaId } = req.params;
@@ -1161,6 +1236,7 @@ module.exports = {
     getConsultationData,
     saveConsultation,
     getConsultationMedia,
+    getConsultationMediaFile,
     uploadConsultationMedia,
     deleteConsultationMedia,
     getPatientHistory,

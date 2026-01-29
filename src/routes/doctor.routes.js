@@ -23,6 +23,7 @@ router.get('/appointments', doctorController.getAppointments);
 router.get('/consultation/:appointmentId', doctorController.getConsultationData);
 router.post('/consultation/:appointmentId', doctorController.saveConsultation);
 router.get('/consultation/:consultationId/media', doctorController.getConsultationMedia);
+router.get('/consultation/:consultationId/media/:mediaId/file', doctorController.getConsultationMediaFile);
 router.post('/consultation/:consultationId/media', uploadSingle('file'), handleUploadError, doctorController.uploadConsultationMedia);
 router.delete('/consultation/:consultationId/media/:mediaId', doctorController.deleteConsultationMedia);
 router.get('/consultation/:consultationId/print', doctorController.getPrintData);
