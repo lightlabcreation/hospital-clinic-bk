@@ -16,7 +16,8 @@ const createAppointment = async (req, res) => {
             date,
             time,
             doctorId,
-            reason
+            reason,
+            fee
         } = req.body;
 
         // Validate required fields
@@ -58,19 +59,21 @@ const createAppointment = async (req, res) => {
             } else {
                 // Create new patient
                 const [newPatient] = await db.query(
-                    `INSERT INTO patients (name, mobile, age, gender, registered_date)
-                     VALUES (?, ?, ?, ?, CURRENT_DATE)`,
-                    [patientName, patientMobile, patientAge || null, patientGender || 'Male']
+                    `INSERT INTO patients (name, mobile, age, gender, registered_date, created_by)
+                     VALUES (?, ?, ?, ?, CURRENT_DATE, ?)`,
+                    [patientName, patientMobile, patientAge || null, patientGender || 'Male', req.user.id]
                 );
                 finalPatientId = newPatient.insertId;
             }
         }
 
+        const feeAmount = fee != null && fee !== '' ? parseFloat(fee) : 0;
+
         // Create appointment
         const [result] = await db.query(
-            `INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, reason, status, created_by)
-             VALUES (?, ?, ?, ?, ?, 'Waiting', ?)`,
-            [finalPatientId, doctorId, formattedDate, formattedTime, reason || null, req.user.id]
+            `INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, reason, fee, status, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, 'Waiting', ?)`,
+            [finalPatientId, doctorId, formattedDate, formattedTime, reason || null, feeAmount, req.user.id]
         );
 
         // Update patient's total visits and last visit
@@ -79,14 +82,33 @@ const createAppointment = async (req, res) => {
             [formattedDate, finalPatientId]
         );
 
+        // If fee > 0: Create payment + invoice at booking time (patient pays when booking)
+        if (feeAmount > 0) {
+            try {
+                await db.query(`
+                    INSERT INTO payments (appointment_id, patient_id, doctor_id, amount, payment_date, payment_method, status, created_by)
+                    VALUES (?, ?, ?, ?, ?, 'Cash', 'Completed', ?)
+                `, [result.insertId, finalPatientId, doctorId, feeAmount, formattedDate, req.user.id]);
+
+                const [invCount] = await db.query('SELECT COUNT(*) as c FROM invoices');
+                const invoiceNumber = `INV-${String(invCount[0].c + 1).padStart(6, '0')}`;
+                await db.query(`
+                    INSERT INTO invoices (invoice_number, appointment_id, patient_id, doctor_id, amount, invoice_date, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'Generated')
+                `, [invoiceNumber, result.insertId, finalPatientId, doctorId, feeAmount, formattedDate]);
+            } catch (e) { /* ignore if payments/invoices tables missing */ }
+        }
+
         // Get created appointment with details
         const [appointment] = await db.query(`
             SELECT a.*,
                    p.name as patient_name, p.mobile as patient_mobile, p.age as patient_age, p.gender as patient_gender,
-                   d.name as doctor_name, d.specialization
+                   d.name as doctor_name, d.specialization,
+                   u.name as created_by_name, u.role as created_by_role
             FROM appointments a
             JOIN patients p ON a.patient_id = p.id
             JOIN doctors d ON a.doctor_id = d.id
+            LEFT JOIN users u ON a.created_by = u.id
             WHERE a.id = ?
         `, [result.insertId]);
 
@@ -129,11 +151,11 @@ const updateAppointmentStatus = async (req, res) => {
     }
 };
 
-// Get available doctors (for dropdown)
+// Get available doctors (for dropdown) - includes consultation_fee
 const getAvailableDoctors = async (req, res) => {
     try {
         const [doctors] = await db.query(
-            'SELECT id, name, specialization FROM doctors WHERE status = "Active" ORDER BY name'
+            'SELECT id, name, specialization, COALESCE(consultation_fee, 0) as consultation_fee FROM doctors WHERE status = "Active" ORDER BY name'
         );
 
         successResponse(res, doctors, 'Doctors fetched successfully');

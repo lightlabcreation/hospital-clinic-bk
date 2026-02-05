@@ -11,6 +11,28 @@ const getDoctorId = async (userId) => {
 };
 
 // ====================================
+// GET CURRENT DOCTOR PROFILE (for doctor self-booking)
+// ====================================
+const getCurrentDoctor = async (req, res) => {
+    try {
+        if (req.user.role !== 'DOCTOR') {
+            return errorResponse(res, 'Doctor only', 403);
+        }
+        const [doctors] = await db.query(
+            'SELECT id, name, specialization, COALESCE(consultation_fee, 0) as consultation_fee FROM doctors WHERE user_id = ?',
+            [req.user.id]
+        );
+        if (doctors.length === 0) {
+            return errorResponse(res, 'Doctor profile not found', 404);
+        }
+        successResponse(res, doctors[0], 'Current doctor fetched successfully');
+    } catch (error) {
+        console.error('Get Current Doctor Error:', error);
+        errorResponse(res, 'Failed to fetch doctor profile', 500, error.message);
+    }
+};
+
+// ====================================
 // DASHBOARD
 // ====================================
 const getDashboardStats = async (req, res) => {
@@ -23,21 +45,33 @@ const getDashboardStats = async (req, res) => {
 
         const today = new Date().toISOString().split('T')[0];
 
-        // Get today's total appointments for THIS doctor
+        // 1. Total Earnings (Completed Payments)
+        const [earnings] = await db.query(
+            'SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE doctor_id = ? AND status = "Completed"',
+            [doctorId]
+        );
+
+        // 2. All-time Total Appointments
         const [totalAppointments] = await db.query(
-            'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ? AND appointment_date = ?',
-            [doctorId, today]
+            'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ?',
+            [doctorId]
         );
 
-        // Get pending (waiting) count for THIS doctor
+        // 3. All-time Pending (Waiting)
         const [pendingCount] = await db.query(
-            'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ? AND appointment_date = ? AND status = "Waiting"',
-            [doctorId, today]
+            'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ? AND status = "Waiting"',
+            [doctorId]
         );
 
-        // Get completed count for THIS doctor
+        // 4. All-time Completed
         const [completedCount] = await db.query(
-            'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ? AND appointment_date = ? AND status = "Completed"',
+            'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ? AND status = "Completed"',
+            [doctorId]
+        );
+
+        // 5. Today's Appointments (Keep for specific view if needed, or replace)
+        const [todayCount] = await db.query(
+            'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ? AND appointment_date = ?',
             [doctorId, today]
         );
 
@@ -60,9 +94,11 @@ const getDashboardStats = async (req, res) => {
 
         successResponse(res, {
             stats: {
-                todayTotal: totalAppointments[0]?.total || 0,
+                totalEarnings: earnings[0]?.total || 0,
+                totalAppointments: totalAppointments[0]?.total || 0,
                 pending: pendingCount[0]?.total || 0,
                 completed: completedCount[0]?.total || 0,
+                todayTotal: todayCount[0]?.total || 0,
                 globalToday: globalToday[0]?.total || 0
             },
             nextAppointments: nextAppointments || []
@@ -85,26 +121,52 @@ const getTodayAppointments = async (req, res) => {
             return errorResponse(res, 'Doctor profile not found', 404);
         }
 
+        const { page = 1, limit = 10, search, status } = req.query;
+        const { limit: queryLimit, offset } = paginate(page, limit);
         const today = new Date().toISOString().split('T')[0];
 
-        const [appointments] = await db.query(`
+        let query = `
             SELECT a.*,
                    p.id as patient_id, p.name as patient_name, p.mobile as patient_mobile,
                    p.age as patient_age, p.gender as patient_gender
             FROM appointments a
             JOIN patients p ON a.patient_id = p.id
             WHERE a.doctor_id = ? AND a.appointment_date = ?
-            ORDER BY a.appointment_time ASC
-        `, [doctorId, today]);
+        `;
+        const params = [doctorId, today];
 
-        // Get counts
-        const total = appointments.length;
-        const pending = appointments.filter(a => a.status === 'Waiting').length;
+        if (search) {
+            query += ` AND (p.name LIKE ?)`;
+            params.push(`%${search}%`);
+        }
+
+        if (status && status !== 'All') {
+            query += ` AND a.status = ?`;
+            params.push(status);
+        }
+
+        // Get total count
+        const countQuery = query.replace(/SELECT a\.\*,[\s\S]*?FROM/, 'SELECT COUNT(*) as total FROM');
+        const [countResult] = await db.query(countQuery, params);
+
+        // Add pagination
+        query += ` ORDER BY a.appointment_time ASC LIMIT ? OFFSET ?`;
+        params.push(queryLimit, offset);
+
+        const [appointments] = await db.query(query, params);
+
+        // Get total pending for today (regardless of pagination)
+        const [pendingResult] = await db.query(
+            'SELECT COUNT(*) as total FROM appointments WHERE doctor_id = ? AND appointment_date = ? AND status = "Waiting"',
+            [doctorId, today]
+        );
 
         successResponse(res, {
             appointments,
-            total,
-            pending
+            total: countResult[0].total,
+            pending: pendingResult[0].total,
+            page: parseInt(page),
+            totalPages: Math.ceil(countResult[0].total / queryLimit)
         }, 'Today appointments fetched successfully');
 
     } catch (error) {
@@ -124,14 +186,17 @@ const getAppointments = async (req, res) => {
             return errorResponse(res, 'Doctor profile not found', 404);
         }
 
-        const { date, status, search } = req.query;
+        const { date, status, search, page = 1, limit = 10 } = req.query;
+        const { limit: queryLimit, offset } = paginate(page, limit);
 
         let query = `
             SELECT a.*,
                    p.id as patient_id, p.name as patient_name, p.mobile as patient_mobile,
-                   p.age as patient_age, p.gender as patient_gender
+                   p.age as patient_age, p.gender as patient_gender,
+                   d.name as doctor_name
             FROM appointments a
             JOIN patients p ON a.patient_id = p.id
+            JOIN doctors d ON a.doctor_id = d.id
             WHERE a.doctor_id = ?
         `;
         const params = [doctorId];
@@ -151,11 +216,21 @@ const getAppointments = async (req, res) => {
             params.push(`%${search}%`);
         }
 
-        query += ` ORDER BY a.appointment_date DESC, a.appointment_time ASC`;
+        // Get total count
+        const countQuery = query.replace(/SELECT a\.\*,[\s\S]*?FROM/, 'SELECT COUNT(*) as total FROM');
+        const [countResult] = await db.query(countQuery, params);
+
+        query += ` ORDER BY a.appointment_date DESC, a.appointment_time ASC LIMIT ? OFFSET ?`;
+        params.push(queryLimit, offset);
 
         const [appointments] = await db.query(query, params);
 
-        successResponse(res, { appointments }, 'Appointments fetched successfully');
+        successResponse(res, {
+            appointments,
+            total: countResult[0].total,
+            page: parseInt(page),
+            totalPages: Math.ceil(countResult[0].total / queryLimit)
+        }, 'Appointments fetched successfully');
 
     } catch (error) {
         console.error('Get Appointments Error:', error);
@@ -380,10 +455,24 @@ const saveConsultation = async (req, res) => {
         }
 
         // Mark appointment as completed
+        const [aptForFee] = await db.query('SELECT fee, appointment_date FROM appointments WHERE id = ?', [appointmentId]);
         await db.query(
             'UPDATE appointments SET status = "Completed" WHERE id = ?',
             [appointmentId]
         );
+
+        // Create payment record if appointment has fee
+        if (aptForFee[0]?.fee > 0) {
+            try {
+                const [existing] = await db.query('SELECT id FROM payments WHERE appointment_id = ?', [appointmentId]);
+                if (existing.length === 0) {
+                    await db.query(`
+                        INSERT INTO payments (appointment_id, patient_id, doctor_id, amount, payment_date, payment_method, status, created_by)
+                        VALUES (?, ?, ?, ?, ?, 'Cash', 'Completed', ?)
+                    `, [appointmentId, patientId, finalDoctorId, aptForFee[0].fee, aptForFee[0].appointment_date, req.user?.id]);
+                }
+            } catch (e) { /* ignore if payments table doesn't exist */ }
+        }
 
         // Update patient's last visit
         await db.query(
@@ -546,6 +635,36 @@ const getPatientHistory = async (req, res) => {
             params.push(`%${search}%`, `%${search}%`);
         }
 
+        // Get total count
+        let countQuery = query.replace('SELECT DISTINCT p.*, (SELECT diagnosis FROM consultations WHERE patient_id = p.id ORDER BY id DESC LIMIT 1) as lastCondition, (SELECT COUNT(*) FROM consultations WHERE patient_id = p.id' + (doctorId ? ' AND doctor_id = ?' : '') + ') as totalVisits, (SELECT MAX(id) FROM consultations WHERE patient_id = p.id) as lastVisitDate', 'SELECT COUNT(DISTINCT p.id) as total');
+
+        // Clean up the count query specifically to avoid subquery complications if they were in the select list
+        // A safer way is to use the FROM clause and WHERE clause parts of the original query
+        // But since we built the query dynamically, let's reconstruct a simpler count query
+
+        let simpleCountQuery = `SELECT COUNT(DISTINCT p.id) as total FROM patients p`;
+        const simpleCountParams = [];
+
+        if (doctorId) {
+            simpleCountQuery += ` JOIN consultations c ON p.id = c.patient_id WHERE c.doctor_id = ?`;
+            simpleCountParams.push(doctorId);
+        } else {
+            simpleCountQuery += ` LEFT JOIN consultations c ON p.id = c.patient_id WHERE 1=1`;
+        }
+
+        if (mobile) {
+            simpleCountQuery += ` AND p.mobile = ?`;
+            simpleCountParams.push(mobile);
+        }
+
+        if (search) {
+            simpleCountQuery += ` AND (p.name LIKE ? OR p.mobile LIKE ?)`;
+            simpleCountParams.push(`%${search}%`, `%${search}%`);
+        }
+
+        const [countResult] = await db.query(simpleCountQuery, simpleCountParams);
+
+
         query += ` ORDER BY lastVisitDate DESC LIMIT ? OFFSET ?`;
         params.push(queryLimit, offset);
 
@@ -576,7 +695,12 @@ const getPatientHistory = async (req, res) => {
             })
         );
 
-        successResponse(res, { patients: patientsWithAppointments }, 'Patient history fetched successfully');
+        successResponse(res, {
+            patients: patientsWithAppointments,
+            total: countResult[0].total,
+            page: parseInt(page),
+            totalPages: Math.ceil(countResult[0].total / queryLimit)
+        }, 'Patient history fetched successfully');
 
     } catch (error) {
         console.error('Get Patient History Error:', error);
@@ -625,7 +749,7 @@ const getPatientFullHistory = async (req, res) => {
 // ====================================
 const getReports = async (req, res) => {
     try {
-        const { patientId, page = 1, limit = 20 } = req.query;
+        const { patientId, page = 1, limit = 10 } = req.query;
         const { limit: queryLimit, offset } = paginate(page, limit);
 
         // For ADMIN and STAFF, allow access to all reports. For DOCTOR, check doctor profile
@@ -660,12 +784,21 @@ const getReports = async (req, res) => {
             params.push(doctorId);
         }
 
+        // Get total count
+        const countQuery = query.replace('SELECT cm.*, p.id as patient_id, p.name as patient_name, p.mobile as patient_mobile', 'SELECT COUNT(*) as total');
+        const [countResult] = await db.query(countQuery, params);
+
         query += ` ORDER BY cm.uploaded_at DESC LIMIT ? OFFSET ?`;
         params.push(queryLimit, offset);
 
         const [reports] = await db.query(query, params);
 
-        successResponse(res, { reports }, 'Reports fetched successfully');
+        successResponse(res, {
+            reports,
+            total: countResult[0].total,
+            page: parseInt(page),
+            totalPages: Math.ceil(countResult[0].total / queryLimit)
+        }, 'Reports fetched successfully');
 
     } catch (error) {
         console.error('Get Reports Error:', error);
@@ -853,8 +986,8 @@ const getConsultationMediaFile = async (req, res) => {
         }
 
         // Determine content type
-        const contentType = mediaFile.file_type === 'PDF' 
-            ? 'application/pdf' 
+        const contentType = mediaFile.file_type === 'PDF'
+            ? 'application/pdf'
             : 'image/jpeg'; // Default to jpeg for images
 
         // Set headers and send file
@@ -1026,80 +1159,7 @@ const getRecentConsultations = async (req, res) => {
 // ====================================
 // PRINT CONSULTATION
 // ====================================
-const getPrintData = async (req, res) => {
-    try {
-        const { consultationId } = req.params;
 
-        // Get consultation with all details
-        const [consultations] = await db.query(`
-            SELECT c.*, a.appointment_date, a.appointment_time,
-                   p.name as patient_name, p.age as patient_age, p.gender as patient_gender, p.mobile as patient_mobile,
-                   d.name as doctor_name, d.specialization, d.qualification, d.registration_no
-            FROM consultations c
-            JOIN appointments a ON c.appointment_id = a.id
-            JOIN patients p ON c.patient_id = p.id
-            JOIN doctors d ON c.doctor_id = d.id
-            WHERE c.id = ?
-        `, [consultationId]);
-
-        if (consultations.length === 0) {
-            return errorResponse(res, 'Consultation not found', 404);
-        }
-
-        // Get clinic settings
-        const [settings] = await db.query(`
-            SELECT clinic_name, address, phone, email, logo_url, signature_url, 
-                   print_header, print_header_footer,
-                   header_margin_top, header_margin_bottom,
-                   footer_margin_top, footer_margin_bottom,
-                   page_margin_left, page_margin_right,
-                   header_padding_top, header_padding_bottom,
-                   footer_padding_top, footer_padding_bottom,
-                   content_spacing, section_spacing
-            FROM clinic_settings LIMIT 1
-        `);
-
-        const consultation = consultations[0];
-
-        // Get media files for this consultation
-        const [mediaFiles] = await db.query(`
-            SELECT id, file_name, file_type, file_url, uploaded_at
-            FROM consultation_media
-            WHERE consultation_id = ?
-            ORDER BY uploaded_at DESC
-        `, [consultationId]);
-
-        successResponse(res, {
-            clinic: settings[0] || { clinic_name: 'My Clinic' },
-            doctor: {
-                name: consultation.doctor_name,
-                specialization: consultation.specialization,
-                qualification: consultation.qualification,
-                regNo: consultation.registration_no
-            },
-            patient: {
-                name: consultation.patient_name,
-                age: consultation.patient_age,
-                gender: consultation.patient_gender,
-                mobile: consultation.patient_mobile
-            },
-            date: consultation.appointment_date,
-            consultation: {
-                chiefComplaints: consultation.chief_complaints,
-                comorbidities: consultation.comorbidities,
-                imagingFindings: consultation.imaging_findings,
-                diagnosis: consultation.diagnosis,
-                treatmentPlan: consultation.treatment_plan,
-                followUpNotes: consultation.follow_up_notes
-            },
-            mediaFiles: mediaFiles || []
-        }, 'Print data fetched successfully');
-
-    } catch (error) {
-        console.error('Get Print Data Error:', error);
-        errorResponse(res, 'Failed to fetch print data', 500, error.message);
-    }
-};
 
 // ====================================
 // UPDATE PRINT PREFERENCES
@@ -1229,16 +1289,274 @@ const transcribeSpeech = async (req, res) => {
     }
 };
 
+// ====================================
+// GET ALL PATIENTS (for print selection)
+// ====================================
+const getAllPatients = async (req, res) => {
+    try {
+        const doctorId = await getDoctorId(req.user.id);
+
+        if (!doctorId) {
+            return errorResponse(res, 'Doctor profile not found', 404);
+        }
+
+        // Get all patients who have had appointments with this doctor
+        const [patients] = await db.query(`
+            SELECT 
+                p.id,
+                p.name,
+                p.mobile,
+                p.age,
+                p.gender,
+                p.created_at as registered_date,
+                MAX(a.appointment_date) as last_appointment_date,
+                COUNT(a.id) as total_visits,
+                (
+                    SELECT c.diagnosis 
+                    FROM consultations c 
+                    INNER JOIN appointments a2 ON c.appointment_id = a2.id 
+                    WHERE a2.patient_id = p.id AND a2.doctor_id = ?
+                    ORDER BY a2.appointment_date DESC, a2.appointment_time DESC 
+                    LIMIT 1
+                ) as last_condition,
+                (
+                    SELECT a3.id 
+                    FROM appointments a3 
+                    WHERE a3.patient_id = p.id AND a3.doctor_id = ?
+                    ORDER BY a3.appointment_date DESC, a3.appointment_time DESC 
+                    LIMIT 1
+                ) as latest_appointment_id
+            FROM patients p
+            INNER JOIN appointments a ON p.id = a.patient_id
+            WHERE a.doctor_id = ?
+            GROUP BY p.id, p.name, p.mobile, p.age, p.gender, p.created_at
+            ORDER BY MAX(a.appointment_date) DESC
+        `, [doctorId, doctorId, doctorId]);
+
+        successResponse(res, { patients }, 'Patients fetched successfully');
+
+    } catch (error) {
+        console.error('Get All Patients Error:', error);
+        errorResponse(res, 'Failed to fetch patients', 500, error.message);
+    }
+};
+
+// ====================================
+// GET PRINT DATA (by consultation ID)
+// ====================================
+const getPrintData = async (req, res) => {
+    try {
+        const { consultationId } = req.params;
+        const doctorId = await getDoctorId(req.user.id);
+
+        if (!doctorId) {
+            return errorResponse(res, 'Doctor profile not found', 404);
+        }
+
+        // Get consultation data with all related information
+        const [consultations] = await db.query(`
+            SELECT c.*, a.appointment_date, a.appointment_time, a.fee,
+                   p.name as patient_name, p.age as patient_age, p.gender as patient_gender, 
+                   p.mobile as patient_mobile, p.address as patient_address,
+                   d.name as doctor_name, d.specialization as doctor_specialization
+            FROM consultations c
+            INNER JOIN appointments a ON c.appointment_id = a.id
+            INNER JOIN patients p ON a.patient_id = p.id
+            INNER JOIN doctors d ON a.doctor_id = d.id
+            WHERE c.id = ? AND a.doctor_id = ?
+            LIMIT 1
+        `, [consultationId, doctorId]);
+
+        if (consultations.length === 0) {
+            return errorResponse(res, 'Consultation not found', 404);
+        }
+
+        const consultation = consultations[0];
+
+        // Get clinic settings for print preferences
+        const [clinicSettings] = await db.query(`
+            SELECT * FROM clinic_settings LIMIT 1
+        `);
+
+        successResponse(res, {
+            clinic: clinicSettings[0] || {},
+            doctor: {
+                name: consultation.doctor_name,
+                specialization: consultation.doctor_specialization
+            },
+            patient: {
+                name: consultation.patient_name,
+                age: consultation.patient_age,
+                gender: consultation.patient_gender,
+                mobile: consultation.patient_mobile,
+                address: consultation.patient_address
+            },
+            date: consultation.appointment_date,
+            time: consultation.appointment_time,
+            fee: consultation.fee,
+            consultation: {
+                symptoms: consultation.symptoms,
+                diagnosis: consultation.diagnosis,
+                prescription: consultation.prescription,
+                advice: consultation.advice,
+                follow_up_date: consultation.follow_up_date
+            }
+        }, 'Print data fetched successfully');
+
+    } catch (error) {
+        console.error('Get Print Data Error:', error);
+        errorResponse(res, 'Failed to fetch print data', 500, error.message);
+    }
+};
+
+// ====================================
+// GET PRINT DATA BY PATIENT ID (latest consultation)
+// ====================================
+// ====================================
+// GET PRINT DATA BY PATIENT ID (latest consultation or appointment)
+// ====================================
+const getPrintDataByPatient = async (req, res) => {
+    try {
+        const { patientId } = req.params;
+        const doctorId = await getDoctorId(req.user.id);
+
+        if (!doctorId) {
+            return errorResponse(res, 'Doctor profile not found', 404);
+        }
+
+        // Get the latest appointment for this patient with this doctor
+        // LEFT JOIN consultation to get data if it exists, otherwise just appointment info
+        const [records] = await db.query(`
+            SELECT a.id as appointment_id, a.appointment_date, a.appointment_time, a.fee, a.reason,
+                   c.id as consultation_id, c.chief_complaints, c.diagnosis, c.treatment_plan, 
+                   c.imaging_findings, c.comorbidities, c.follow_up_notes,
+                   p.name as patient_name, p.age as patient_age, p.gender as patient_gender, 
+                   p.mobile as patient_mobile, p.address as patient_address,
+                   d.name as doctor_name, d.specialization as doctor_specialization
+            FROM appointments a
+            INNER JOIN patients p ON a.patient_id = p.id
+            INNER JOIN doctors d ON a.doctor_id = d.id
+            LEFT JOIN consultations c ON c.appointment_id = a.id
+            WHERE p.id = ? AND a.doctor_id = ?
+            ORDER BY a.appointment_date DESC, a.appointment_time DESC
+            LIMIT 1
+        `, [patientId, doctorId]);
+
+        if (records.length === 0) {
+            return errorResponse(res, 'No appointment found for this patient', 404);
+        }
+
+        const record = records[0];
+
+        // Get clinic settings for print preferences
+        const [clinicSettings] = await db.query(`
+            SELECT * FROM clinic_settings LIMIT 1
+        `);
+
+        successResponse(res, {
+            clinic: clinicSettings[0] || {},
+            doctor: {
+                name: record.doctor_name,
+                specialization: record.doctor_specialization
+            },
+            patient: {
+                name: record.patient_name,
+                age: record.patient_age,
+                gender: record.patient_gender,
+                mobile: record.patient_mobile,
+                address: record.patient_address
+            },
+            date: record.appointment_date,
+            time: record.appointment_time,
+            fee: record.fee,
+            consultation: {
+                chiefComplaints: record.chief_complaints || record.reason || '',
+                diagnosis: record.diagnosis || '',
+                prescription: record.treatment_plan || '',
+                followUpNotes: record.follow_up_notes || '',
+                follow_up_date: '',
+                imagingFindings: record.imaging_findings || '',
+                comorbidities: record.comorbidities || '',
+                treatmentPlan: record.treatment_plan || ''
+            }
+        }, 'Print data fetched successfully');
+
+    } catch (error) {
+        console.error('Get Print Data By Patient Error:', error);
+        errorResponse(res, 'Failed to fetch print data', 500, error.message);
+    }
+};
+
+// ====================================
+// GET PAYMENTS (for doctor)
+// ====================================
+const getPayments = async (req, res) => {
+    try {
+        const doctorId = await getDoctorId(req.user.id);
+
+        if (!doctorId) {
+            return errorResponse(res, 'Doctor profile not found', 404);
+        }
+
+        const { page = 1, limit = 20 } = req.query;
+        const offset = (page - 1) * limit;
+
+        // Get total amount
+        const [totalResult] = await db.query(
+            'SELECT SUM(amount) as total FROM payments WHERE doctor_id = ? AND status = "Completed"',
+            [doctorId]
+        );
+
+        // Get payments list
+        const [payments] = await db.query(`
+            SELECT p.*, 
+                   pt.name as patient_name,
+                   d.name as doctor_name
+            FROM payments p
+            JOIN patients pt ON p.patient_id = pt.id
+            JOIN doctors d ON p.doctor_id = d.id
+            WHERE p.doctor_id = ?
+            ORDER BY p.payment_date DESC, p.id DESC
+            LIMIT ? OFFSET ?
+        `, [doctorId, parseInt(limit), parseInt(offset)]);
+
+        // Convert db format to frontend format (if needed, but looks standard)
+        // Frontend expects { records: [...], totalAmount: ... }
+
+        successResponse(res, {
+            records: payments.map(p => ({
+                id: p.id,
+                invoice_number: `INV-${String(p.id).padStart(5, '0')}`,
+                patient_name: p.patient_name,
+                doctor_name: p.doctor_name,
+                appointment_id: p.appointment_id,
+                amount: p.amount,
+                payment_date: p.payment_date,
+                status: p.status,
+                payment_method: p.payment_method
+            })),
+            totalAmount: totalResult[0]?.total || 0
+        }, 'Payments fetched successfully');
+
+    } catch (error) {
+        console.error('Get Payments Error:', error);
+        errorResponse(res, 'Failed to fetch payments', 500, error.message);
+    }
+};
+
 module.exports = {
+    getCurrentDoctor,
     getDashboardStats,
     getTodayAppointments,
     getAppointments,
+    getPayments,
     getConsultationData,
     saveConsultation,
     getConsultationMedia,
     getConsultationMediaFile,
     uploadConsultationMedia,
     deleteConsultationMedia,
+    getAllPatients,
     getPatientHistory,
     getPatientFullHistory,
     getReports,
@@ -1250,6 +1568,7 @@ module.exports = {
     deleteTemplate,
     getRecentConsultations,
     getPrintData,
+    getPrintDataByPatient,
     updatePrintPreferences,
     transcribeSpeech
 };

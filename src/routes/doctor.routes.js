@@ -12,12 +12,16 @@ const { uploadSingle, handleUploadError } = require('../middleware/upload.middle
 router.use(authenticateToken);
 router.use(authorizeRoles('DOCTOR', 'ADMIN', 'STAFF'));
 
+// Current doctor profile (for self-booking)
+router.get('/me', doctorController.getCurrentDoctor);
+
 // Dashboard
 router.get('/dashboard', doctorController.getDashboardStats);
 
 // Appointments
 router.get('/appointments/today', doctorController.getTodayAppointments);
 router.get('/appointments', doctorController.getAppointments);
+router.get('/payments', doctorController.getPayments);
 
 // Consultation
 router.get('/consultation/:appointmentId', doctorController.getConsultationData);
@@ -27,8 +31,10 @@ router.get('/consultation/:consultationId/media/:mediaId/file', doctorController
 router.post('/consultation/:consultationId/media', uploadSingle('file'), handleUploadError, doctorController.uploadConsultationMedia);
 router.delete('/consultation/:consultationId/media/:mediaId', doctorController.deleteConsultationMedia);
 router.get('/consultation/:consultationId/print', doctorController.getPrintData);
+router.get('/patient/:patientId/print', doctorController.getPrintDataByPatient);
 
 // Patient History
+router.get('/patients', doctorController.getAllPatients);
 router.get('/patients/history', doctorController.getPatientHistory);
 router.get('/patients/:patientId/full-history', doctorController.getPatientFullHistory);
 

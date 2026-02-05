@@ -36,6 +36,40 @@ const searchByMobile = async (req, res) => {
     }
 };
 
+// Add new patient (for Staff and Doctor - walk-in registration)
+const addPatient = async (req, res) => {
+    try {
+        const { name, mobile, age, gender, address } = req.body;
+
+        if (!name || !mobile) {
+            return errorResponse(res, 'Name and mobile are required', 400);
+        }
+
+        const mobileDigits = mobile.toString().replace(/\D/g, '');
+        if (mobileDigits.length !== 10) {
+            return errorResponse(res, 'Mobile number must be exactly 10 digits', 400);
+        }
+
+        const [existing] = await db.query('SELECT id FROM patients WHERE mobile = ?', [mobileDigits]);
+        if (existing.length > 0) {
+            return errorResponse(res, 'Patient with this mobile number already exists', 400);
+        }
+
+        const [result] = await db.query(
+            `INSERT INTO patients (name, mobile, age, gender, address, registered_date)
+             VALUES (?, ?, ?, ?, ?, CURRENT_DATE)`,
+            [name, mobileDigits, age || null, gender || 'Male', address || null]
+        );
+
+        const [newPatient] = await db.query('SELECT * FROM patients WHERE id = ?', [result.insertId]);
+        successResponse(res, newPatient[0], 'Patient added successfully', 201);
+
+    } catch (error) {
+        console.error('Add Patient Error:', error);
+        errorResponse(res, 'Failed to add patient', 500, error.message);
+    }
+};
+
 // Get patient by ID
 const getPatientById = async (req, res) => {
     try {
@@ -71,5 +105,6 @@ const getPatientById = async (req, res) => {
 
 module.exports = {
     searchByMobile,
-    getPatientById
+    getPatientById,
+    addPatient
 };

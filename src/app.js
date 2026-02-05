@@ -36,6 +36,7 @@ const staffRoutes = require('./routes/staff.routes');
 const doctorRoutes = require('./routes/doctor.routes');
 const patientRoutes = require('./routes/patient.routes');
 const appointmentRoutes = require('./routes/appointment.routes');
+const paymentRoutes = require('./routes/payment.routes');
 
 // ====================================
 // USE ROUTES
@@ -46,6 +47,7 @@ app.use('/api/staff', staffRoutes);
 app.use('/api/doctor', doctorRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/appointments', appointmentRoutes);
+app.use('/api', paymentRoutes);
 
 // ====================================
 // HEALTH CHECK ROUTE

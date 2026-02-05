@@ -25,9 +25,14 @@ const getDashboardStats = async (req, res) => {
             'SELECT COUNT(*) as total FROM patients'
         );
 
-        // Get today's appointments
-        const [todayAppointments] = await db.query(
-            'SELECT COUNT(*) as total FROM appointments WHERE appointment_date = CURRENT_DATE'
+        // Get total appointments (all-time)
+        const [appointmentsCount] = await db.query(
+            'SELECT COUNT(*) as total FROM appointments'
+        );
+
+        // Get total payments (completed only)
+        const [paymentsTotal] = await db.query(
+            'SELECT COALESCE(SUM(fee), 0) as total FROM appointments WHERE status = "Completed"'
         );
 
         // Get clinic settings
@@ -37,7 +42,8 @@ const getDashboardStats = async (req, res) => {
             totalDoctors: doctorsCount[0].total,
             totalStaff: staffCount[0].total,
             totalPatients: patientsCount[0].total,
-            todayAppointments: todayAppointments[0].total,
+            totalAppointments: appointmentsCount[0].total,
+            totalPayments: paymentsTotal[0].total,
             clinicStatus: 'Active',
             clinicName: settings[0]?.clinic_name || 'My Clinic'
         }, 'Dashboard stats fetched successfully');
@@ -97,7 +103,7 @@ const getAllDoctors = async (req, res) => {
 // Add new doctor
 const addDoctor = async (req, res) => {
     try {
-        const { name, mobile, email, specialization, username, password, status = 'Active' } = req.body;
+        const { name, mobile, email, specialization, consultation_fee, username, password, status = 'Active' } = req.body;
 
         // Validate required fields
         if (!name || !mobile || !email || !username || !password) {
@@ -123,11 +129,12 @@ const addDoctor = async (req, res) => {
             [email, hashedPassword, name, 'DOCTOR', status]
         );
 
+        const feeAmount = consultation_fee != null ? parseFloat(consultation_fee) : 0;
         // Create doctor profile
         const [doctorResult] = await db.query(
-            `INSERT INTO doctors (user_id, name, mobile, email, specialization, username, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [userResult.insertId, name, mobile, email, specialization || 'General Medicine', username, status]
+            `INSERT INTO doctors (user_id, name, mobile, email, specialization, consultation_fee, username, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [userResult.insertId, name, mobile, email, specialization || 'General Medicine', feeAmount, username, status]
         );
 
         // Get created doctor
@@ -145,7 +152,7 @@ const addDoctor = async (req, res) => {
 const updateDoctor = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, mobile, email, specialization, username, password, status } = req.body;
+        const { name, mobile, email, specialization, consultation_fee, username, password, status } = req.body;
 
         // Check if doctor exists
         const [existing] = await db.query('SELECT * FROM doctors WHERE id = ?', [id]);
@@ -153,11 +160,17 @@ const updateDoctor = async (req, res) => {
             return errorResponse(res, 'Doctor not found', 404);
         }
 
-        // Update doctor
+        const feeAmount = consultation_fee != null ? parseFloat(consultation_fee) : undefined;
+        const updateFields = ['name = ?', 'mobile = ?', 'email = ?', 'specialization = ?', 'username = ?', 'status = ?'];
+        const updateParams = [name, mobile, email, specialization, username, status];
+        if (feeAmount !== undefined) {
+            updateFields.push('consultation_fee = ?');
+            updateParams.push(feeAmount);
+        }
+        updateParams.push(id);
         await db.query(
-            `UPDATE doctors SET name = ?, mobile = ?, email = ?, specialization = ?, username = ?, status = ?
-             WHERE id = ?`,
-            [name, mobile, email, specialization, username, status, id]
+            `UPDATE doctors SET ${updateFields.join(', ')} WHERE id = ?`,
+            updateParams
         );
 
         // Update user account
@@ -527,7 +540,7 @@ const updateStaff = async (req, res) => {
     } catch (error) {
         console.error('Update Staff Error:', error);
         console.error('Error Stack:', error.stack);
-        
+
         // Handle specific database errors
         if (error.code === 'ER_DUP_ENTRY') {
             if (error.message.includes('username')) {
@@ -535,11 +548,11 @@ const updateStaff = async (req, res) => {
             }
             return errorResponse(res, 'Duplicate entry. This email or username already exists.', 400);
         }
-        
+
         if (error.code === 'ER_NO_REFERENCED_ROW_2') {
             return errorResponse(res, 'Referenced user not found', 400);
         }
-        
+
         errorResponse(res, 'Failed to update staff', 500, error.message);
     }
 };
@@ -619,11 +632,11 @@ const getClinicSettings = async (req, res) => {
 // Update clinic settings
 const updateClinicSettings = async (req, res) => {
     try {
-        const { 
-            clinic_name, 
-            address, 
-            phone, 
-            email, 
+        const {
+            clinic_name,
+            address,
+            phone,
+            email,
             print_header,
             print_header_footer,
             // Print layout preferences
@@ -783,7 +796,7 @@ const getAllAppointments = async (req, res) => {
         let query = `
             SELECT a.*,
                    p.name as patient_name, p.mobile as patient_mobile, p.age as patient_age, p.gender as patient_gender,
-                   d.name as doctor_name, d.specialization
+                   d.name as doctor_name, d.specialization, COALESCE(a.fee, 0) as fee
             FROM appointments a
             JOIN patients p ON a.patient_id = p.id
             JOIN doctors d ON a.doctor_id = d.id
@@ -802,8 +815,12 @@ const getAllAppointments = async (req, res) => {
         }
 
         if (date) {
-            query += ` AND a.appointment_date = ?`;
-            params.push(date);
+            if (date === 'today') {
+                query += ` AND a.appointment_date = CURRENT_DATE`;
+            } else {
+                query += ` AND a.appointment_date = ?`;
+                params.push(date);
+            }
         }
 
         const countQuery = query.replace(/SELECT a\.\*,[\s\S]*?FROM/, 'SELECT COUNT(*) as total FROM');
